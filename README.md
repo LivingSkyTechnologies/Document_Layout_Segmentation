@@ -29,9 +29,8 @@ To setup DAD, run the following starting from the repo root dir:
 mkdir dad/documents
 mkdir dad/annotations
 cd ..
-git clone https://github.com/logan-markewich/DAD-Dense-Article-Dataset
-cp DAD-dense-article-dataset/Articles/*/JSON_Rev1/* ./document-layout-segmentation/dad/annotations/
-cp -r DAD-dense-article-dataset/Articles/*/IMAGE/* ./document-layout-segmentation/dad/docouments/
+git clone https://github.com/LivingSkyTechnologies/Dense_Article_Dataset_DAD
+cp -r Dense_Article_Dataset_DAD/dad ./Document_Layout_Segmentation/
 ```
 Then, your dad folder should have an annotations folder full of json files, while the documents folder is full of folders for each journal article.
 
