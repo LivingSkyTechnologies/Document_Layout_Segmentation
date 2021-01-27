@@ -26,6 +26,7 @@ The repo contains empty "dad" and "publaynet" folders.
 To setup DAD, run the following starting from the repo root dir:
 
 ```
+mkdir dad
 mkdir dad/documents
 mkdir dad/annotations
 cd ..
