@@ -9,46 +9,26 @@ import tensorflow as tf
 
 from PIL import Image
 
-# TODO: This should be temporary! Fix annotation files to be consistent
-TRANSLATE = {"publication": "copyright",
-             "copyrights": "copyright",
-             "data": "list"}
 
-def write_dad_masks(vott_filepath, mask_out_path, tag_names=None, 
-                    tag_mapping=None, buffer_size=0, force=False):
-    """
-    Takes in an annotation JSON from VOTT, and creates masks files 
-    described by the bounding boxes and tags in the JSON. Returns a list of 
-    tags found and a mapping of class->tag name, and a set of tags actually used.
+def write_dad_masks(json_path, annotation_dir, document_dir, output_dir, tag_names=None, tag_mapping=None, buffer_size=0, force=False):
+    anno_json = open(json_path, 'r')
+    data = json.load(anno_json)
+    anno_json.close()
+
+    img_name = os.path.basename(data['imagePath'])
+    img_path = os.path.join(os.path.dirname(json_path).replace(annotation_dir, document_dir), img_name)
     
-    tag_names, class_to_tag, file_to_tags_used = write_masks_from_annotation("train/annotations/doc/doc.json", "train/masks")
+    img = cv2.imread(img_path)
+    try:
+      img = np.zeros(img.shape)
+    except Exception as e:
+      print(img_path)
+      print(json_path)
+      raise e
 
-    Parameters
-    ----------
-    vott_filepath : string
-        Path to a VOTT annotation JSON
-    mask_out_path : string
-        Folder to place masks into
-    tag_names : list
-        Override the tag_names list so that the values in the json are ignored
-    buffer_size : int
-        The size of a buffer "don't care" region between a mask and the background. 
-        The buffer is subtracted from the mask, making the mask slightly smaller
-    force : bool
-        If true, will write files to disk if they already exist
-
-    Returns
-    -------
-    tag_names, class_dict, file_to_tags_used : list, dict, dict
-        A list of tags found, a dict mapping of class->tag name, and a dict mapping of img->tags actually used
-    """
-    vott_json = open(vott_filepath, 'r')
-    dataset = json.load(vott_json)
-    vott_json.close()
-    
     if tag_names == None:
         tag_names = set([x["name"].lower()for x in sorted(dataset["tags"], key=lambda x: x["name"])])
-    
+
     class_mapping = {}
     i = 1
     for key in sorted(tag_names):
@@ -59,87 +39,70 @@ def write_dad_masks(vott_filepath, mask_out_path, tag_names=None,
         key = key.lower()
         class_mapping[key] = (i, i ,i)
         i += 1
-    
+
     # Special case the background
     class_mapping['background'] = (0, 0, 0)
     tag_names.add('background')
-    
+
     used_tags = {}
-    for ano_id, ano_data in dataset['assets'].items():
-        img_index = ano_data['asset']['path'].split('-')[1].split('.')[0].lstrip('0')
-        img_name = os.path.basename(vott_filepath).replace("json", "jpg")
-        img_dir = os.path.join(os.path.dirname(vott_filepath.replace('annotations', 'documents')),
-                               img_name.split('.')[0])
-        img_name = img_name.replace('.jpg', '-{}.jpg'.format(img_index))
-        img_path = os.path.join(img_dir, img_name)
-        
-        # Special case. Sometimes img's have a leading zero in vol num, sometimes not
-        if not os.path.exists(img_path):
-            img_name = img_name.replace("-{}.jpg".format(img_index), "-0{}.jpg".format(img_index))
-            img_path = os.path.join(img_dir, img_name)
-        
-        if not os.path.exists(img_path):
-            print("Unable to find image {}".format(img_path))
-            continue
-        
-        box_path = img_path.replace(".jpg", ".txt")
-        
-        img = cv2.imread(img_path)
-        img = np.zeros(img.shape)
-        
-        area_and_boxes = []
+    annotations = []
+    for annotation in data['shapes']:
         used_tags[img_path] = set()
-        for region in ano_data["regions"]:
-            key = region["tags"][-1].lower()
-            if key not in class_mapping:
+        class_name = annotation['label'].lower()
+
+        if class_name not in class_mapping:
+            continue
+
+        if tag_mapping and class_name in tag_mapping:
+            class_name = tag_mapping[class_name]
+
+        class_num = class_mapping[class_name][0]
+        x = int(annotation['points'][0][0])
+        y = int(annotation['points'][0][1])
+        w = int(annotation['points'][1][0]) - x
+        h = int(annotation['points'][1][1]) - y
+        area = w*h
+        used_tags[img_path].add(class_num)
+
+        if w < 0:
+          x = int(annotation['points'][1][0])
+          w = int(annotation['points'][0][0]) - x
+          if w < 0:
+              print('WTF {}'.format(json_path))
+              continue
+
+        if h < 0:
+            y = int(annotation['points'][1][1])
+            h = int(annotation['points'][0][1]) - y
+            if h < 0:
+                print('WTF {}'.format(json_path))
                 continue
-            
-            if key in TRANSLATE:
-                key = TRANSLATE[key]
-            
-            if tag_mapping and key in tag_mapping:
-                key = tag_mapping[key]
-                
-            rgb = class_mapping[key]
-            x = int(region["boundingBox"]["left"])
-            y = int(region["boundingBox"]["top"])
-            w = int(region["boundingBox"]["width"])
-            h = int(region["boundingBox"]["height"])
-            area = w*h
-            area_and_boxes.append((area, x, y, w, h, rgb))
-            used_tags[img_path].add(rgb[0])
-        
-        # sort by area, so smaller boxes are on the top layer, also write out box file
-        if os.path.exists(box_path):
-            os.remove(box_path)
-        
-        area_and_boxes.sort(reverse=True)
-        box_f = open(box_path, 'w+')
-        for area, x, y, w, h, rgb in area_and_boxes:
-            if buffer_size > 0:
-                cv2.rectangle(img, (x-buffer_size,y-buffer_size), (x+w+buffer_size, y+h+buffer_size), (255, 255, 255), -1)
-            cv2.rectangle(img, (x+buffer_size, y+buffer_size), (x+w-buffer_size, y+h-buffer_size), rgb, -1)
-            box_f.write("{},{},{},{},{}\n".format(rgb[0], x, y, w, h))
-        box_f.close()
-                
-        if not os.path.exists(mask_out_path):
-            os.mkdir(mask_out_path)
-        
-        mask_dir = os.path.join(mask_out_path, os.path.basename(img_dir))
-        if not os.path.exists(mask_dir):
-            os.mkdir(mask_dir)
+
+        annotations.append((area, x, y, w, h, class_num))
+
+    annotations.sort(reverse=True)
+    box_path = img_path.replace("jpg", "txt")
+    box_f = open(box_path, 'w+')
+    for area, x, y, w, h, class_num in annotations:
+        if buffer_size > 0:
+            cv2.rectangle(img, (x-buffer_size,y-buffer_size), (x+w+buffer_size, y+h+buffer_size), (255, 255, 255), -1)
+        cv2.rectangle(img, (x+buffer_size, y+buffer_size), (x+w-buffer_size, y+h-buffer_size), (class_num, class_num, class_num), -1)
+        box_f.write("{},{},{},{},{}\n".format(class_num, x, y, w, h))
+    box_f.close()
+
+    outfile = img_path.replace('jpg', 'png')
+    outfile = outfile.replace(document_dir, output_dir)
+    if not os.path.exists(os.path.dirname(outfile)):
+        os.makedirs(os.path.dirname(outfile))
     
-        outfile = os.path.join(mask_dir, os.path.basename(img_path).replace('jpg', 'png'))
-        
-        if not os.path.exists(outfile) or force:
-            cv2.imwrite(outfile, img)
-    
+    if not os.path.exists(outfile) or force:
+        cv2.imwrite(outfile, img)
+
     actual_class_mapping = {}
     for key in sorted(class_mapping):
         key = key.lower()
         actual_class_mapping[class_mapping[key][0]] = key
-    
-    
+
     return tag_names, actual_class_mapping, used_tags
 
 def write_publaynet_masks(json_path, is_val_set=False, draw_border=True):

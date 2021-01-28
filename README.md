@@ -26,6 +26,7 @@ The repo contains empty "dad" and "publaynet" folders.
 To setup DAD, run the following starting from the repo root dir:
 
 ```
+mkdir dad
 mkdir dad/documents
 mkdir dad/annotations
 cd ..
@@ -37,6 +38,7 @@ Then, your dad folder should have an annotations folder full of json files, whil
 #### PubLayNet
 To setup PubLayNet, run the following from the repo root dir:
 ```
+mkdir publaynet
 wget https://dax-cdn.cdn.appdomain.cloud/dax-publaynet/1.0.0/train-0.tar.gz
 tar -xzf train-0.tar.gz
 rm -f train-0.tar.gz

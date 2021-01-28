@@ -110,15 +110,16 @@ class DADRaw:
     
     def build_and_split(self, border_size=6, force=False):
         anno_dir = os.path.join(self.data_dir, "annotations")
-        mask_dir = os.path.join(self.data_dir, "masks")
+        anno_paths = glob.glob(anno_dir + "/*/*json")
         if os.path.exists(SAVED_PKL_FILE) and not force:
             all_used_tags, class_mapping = pickle.load(open(SAVED_PKL_FILE, 'rb'))
         else:
             all_used_tags = {}
-            for anno_json in os.listdir(anno_dir):
-                anno_path = os.path.join(anno_dir, anno_json)
-                _, class_mapping, used_tags, = write_dad_masks(anno_path, 
-                                                               mask_dir, 
+            for anno_json in anno_paths:
+                _, class_mapping, used_tags, = write_dad_masks(anno_json,
+                                                               "annotations",
+                                                               "documents",
+                                                               "masks", 
                                                                tag_names=TAG_NAMES,
                                                                tag_mapping=TAG_MAPPING,
                                                                buffer_size=border_size,
@@ -152,7 +153,7 @@ class DADRaw:
                 test_used_tags[path] = used_tags
         
         test_paths, valid_paths = stratify_train_test_split(test_used_tags, 0.50, seed=self.seed, debug=False)
-        
+
         return train_paths, valid_paths, test_paths, len(class_mapping)
 
     #####################################################
