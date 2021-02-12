@@ -89,8 +89,9 @@ def write_masks(dataset_dir, border_buffer=6):
     else:
         print("Running full mask generation, this may take a bit.")
         all_used_tags = {}
+        class_mapping = {}
         for anno_json in anno_paths:
-            _, class_mapping, used_tags = write_dad_masks(anno_json,
+            all_used_tags, class_mapping, used_tags = write_dad_masks(anno_json,
                                                           ANNOTATIONS_DIR,
                                                           DOCUMENTS_DIR,
                                                           MASKS_DIR, 

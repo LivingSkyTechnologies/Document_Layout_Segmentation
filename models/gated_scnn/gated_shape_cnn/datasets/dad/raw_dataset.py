@@ -115,6 +115,7 @@ class DADRaw:
             all_used_tags, class_mapping = pickle.load(open(SAVED_PKL_FILE, 'rb'))
         else:
             all_used_tags = {}
+            class_mapping = {}
             for anno_json in anno_paths:
                 _, class_mapping, used_tags, = write_dad_masks(anno_json,
                                                                "annotations",
