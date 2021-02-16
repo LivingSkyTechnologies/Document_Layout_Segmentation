@@ -83,7 +83,7 @@ ANNOTATIONS_DIR = "annotations"
 
 def write_masks(dataset_dir, border_buffer=6):
     anno_dir = os.path.join(dataset_dir, ANNOTATIONS_DIR)
-    anno_paths = glob(anno_dir + "/*json")
+    anno_paths = glob(anno_dir + "/*/*json")
     if os.path.exists(SAVED_PKL_FILE):
         all_used_tags, class_mapping = pickle.load(open(SAVED_PKL_FILE, 'rb'))
     else:
