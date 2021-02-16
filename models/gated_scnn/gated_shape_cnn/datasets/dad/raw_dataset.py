@@ -110,7 +110,7 @@ class DADRaw:
     
     def build_and_split(self, border_size=6, force=False):
         anno_dir = os.path.join(self.data_dir, "annotations")
-        anno_paths = glob.glob(anno_dir + "/*/*json")
+        anno_paths = glob.glob(anno_dir + "/*json")
         if os.path.exists(SAVED_PKL_FILE) and not force:
             all_used_tags, class_mapping = pickle.load(open(SAVED_PKL_FILE, 'rb'))
         else:
