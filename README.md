@@ -10,6 +10,20 @@ This repository provides a framework to train segmentation models to segment doc
 
 [Credits](#Credits)
 
+## Citation
+Currently, our paper is in review with [IJDAR](https://www.springer.com/journal/10032). In the meantime, the following citation can be used:
+```
+@misc{LST2021,
+  author = {Markewich, Logan and Zhang, Hao and Xing, Yubin and Lambert-Shirzad, Navid and Jiang, Zhexin and Lee, RKW and Li, Zhi and Ko, Seok-bum},
+  title = {Document Layout Segmentation},
+  year = {2021},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/LivingSkyTechnologies/Document_Layout_Segmentation}},
+  commit = {8a470eb2de2129b2e42220a39627a9750969f3bf}
+}
+```
+
 ## Setup
 ### Dependencies
 This repo has been tested only with tensorflow-gpu==2.3.1 and tensorflow-addons=0.11.2 using python3.6. The full list of pip dependencies is in requirements.txt.
