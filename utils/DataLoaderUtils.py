@@ -271,13 +271,18 @@ def load_image_test(datapoint: dict, img_size: int) -> tuple:
     tuple
         A modified image and its annotation.
     """
-    input_image = tf.image.resize(datapoint['image'], (img_size, img_size))
-    input_mask = tf.image.resize(datapoint['segmentation_mask'], (img_size, img_size), method='nearest')
+    input_image = datapoint['image']
+    input_mask = datapoint['segmentation_mask']
     gt_boxes = datapoint['data']
     
     # Resize and normalize boxes
     gt_boxes = tf.py_function(scale_normalize_boxes, [gt_boxes, tf.shape(input_image)[0], tf.shape(input_image)[1], img_size], [tf.float32])[0]
-    
+
+    # Resize images
+    input_image = tf.image.resize(input_image, (img_size, img_size))
+    input_mask = tf.image.resize(input_mask, (img_size, img_size), method='nearest')
+
+    # Normalize image and mask
     input_image, input_mask = normalize(input_image, input_mask)
 
     return input_image, input_mask, gt_boxes
