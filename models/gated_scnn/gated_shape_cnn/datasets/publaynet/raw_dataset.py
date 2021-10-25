@@ -71,7 +71,7 @@ class PubLayNetRaw:
 
         valid_paths = [os.path.join(val_dir, x) for x in os.listdir(val_dir) if x.endswith('.jpg')]
 
-        valid_paths, test_paths = stratify_train_test_split(used_val_tags, 0.10, seed=self.seed)
+        valid_paths, test_paths = stratify_train_test_split(used_val_tags, 0.50, seed=self.seed)
         
         return train_paths, valid_paths, test_paths, len(class_mapping)
 
