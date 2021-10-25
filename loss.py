@@ -48,7 +48,7 @@ def build_boxes(labeled):
     def batch_unique(x, max_labels=25):
         labels, _ = tf.unique(tf.reshape(x, (-1,)))
         if (tf.greater_equal(tf.shape(labels)[0], max_labels)):
-            labels = tf.zeros((max_labels,), dtype=tf.int32)
+            labels = tf.gather(labels, tf.range(0, max_labels))
     
         return tf.pad(labels, [[0, max_labels-tf.shape(labels)[0]]])
 
@@ -67,7 +67,7 @@ def build_boxes(labeled):
     batch_boxes = tf.map_fn(lambda inp: batch_get_coords(inp[0], inp[1]), (batch_unique_labels, labeled), parallel_iterations=4, fn_output_signature=tf.float32)
     return batch_boxes
 
-@tf.function
+@tf.function(experimental_relax_shapes=True)
 def compute_iou(boxes1_corners, boxes2_corners):
     """Computes pairwise IOU matrix for given two sets of boxes
 
@@ -93,7 +93,7 @@ def compute_iou(boxes1_corners, boxes2_corners):
     )
     return tf.clip_by_value(intersection_area / union_area, 0.0, 1.0)
 
-@tf.function
+@tf.function(experimental_relax_shapes=True)
 def per_batch_box_loss(pred_boxes, gt_boxes, min_iou=0.05):
     """
     Calculates the giou loss per batch of predicted and ground truth boxes
@@ -118,8 +118,8 @@ def per_batch_box_loss(pred_boxes, gt_boxes, min_iou=0.05):
     iou_matrix = tf.where(iou_matrix < min_iou, 0.0, iou_matrix)
 
     matched_gt_idx = tf.argmax(iou_matrix, axis=1)
-    matched_gt_idx = tf.boolean_mask(matched_gt_idx, tf.not_equal(matched_gt_idx, 0))
-    matched_gt_boxes = tf.gather(gt_boxes, matched_gt_idx)
+    matched_gt_idx_masked = tf.boolean_mask(matched_gt_idx, tf.not_equal(matched_gt_idx, 0))
+    matched_gt_boxes = tf.gather(gt_boxes, matched_gt_idx_masked)
     
     matched_pred_idx = tf.reshape(tf.where(matched_gt_idx > 0), (-1,))
     matched_pred_boxes = tf.gather(pred_boxes, matched_pred_idx)
@@ -129,7 +129,7 @@ def per_batch_box_loss(pred_boxes, gt_boxes, min_iou=0.05):
     else:
         return tf.reduce_mean(tfa.losses.giou_loss(matched_gt_boxes, matched_pred_boxes))
 
-@tf.function
+@tf.function(experimental_relax_shapes=True)
 def box_loss(y_true, y_pred):
     """
     Extracts boxes from a segmentation map, calculate giou loss
@@ -156,8 +156,8 @@ def box_loss(y_true, y_pred):
     box_losses = tf.map_fn(lambda inp: per_batch_box_loss(inp[0], inp[1]), (boxes, y_true), parallel_iterations=4, fn_output_signature=tf.float32)  # Calculates for each batch of predicted boxes and true_boxes
     return box_losses
 
-@tf.function
-def seg_loss(y_true, y_pred, y_true_boxes, skip_box_loss=False):
+@tf.function(experimental_relax_shapes=True)
+def seg_loss(y_true, y_pred, y_true_boxes):
     y_true_masked = tf.boolean_mask(y_true, tf.not_equal(y_true, IGNORE_LABEL))
     y_pred_masked = tf.boolean_mask(y_pred, tf.not_equal(y_true[:,:,:,0], IGNORE_LABEL))
     
@@ -169,8 +169,21 @@ def seg_loss(y_true, y_pred, y_true_boxes, skip_box_loss=False):
     
     loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
     L_classification = tf.reduce_mean(loss_fn(y_true_masked, y_pred_masked, sample_weight=sample_weights))
-    if tf.equal(skip_box_loss, True):
-        return L_classification
+    return L_classification
+
+@tf.function(experimental_relax_shapes=True)
+def seg_box_loss(y_true, y_pred, y_true_boxes):
+    y_true_masked = tf.boolean_mask(y_true, tf.not_equal(y_true, IGNORE_LABEL))
+    y_pred_masked = tf.boolean_mask(y_pred, tf.not_equal(y_true[:,:,:,0], IGNORE_LABEL))
+    
+    y_val, idx, counts = tf.unique_with_counts(y_true_masked)
+    total = tf.cast(tf.reduce_sum(counts), tf.float32)
+    ratios = tf.divide(1.0, tf.divide(tf.cast(counts, tf.float32), total))
+    ratios = tf.divide(ratios, tf.math.reduce_min(ratios))
+    sample_weights = tf.gather(ratios, tf.cast(idx, tf.int32), axis=0, batch_dims=-1)
+    
+    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
+    L_classification = tf.reduce_mean(loss_fn(y_true_masked, y_pred_masked, sample_weight=sample_weights))
 
     L_boxes = tf.reduce_mean(box_loss(y_true_boxes, y_pred))
     return tf.math.add(L_classification, L_boxes)  
