@@ -1,6 +1,6 @@
 # document-layout-segmentation
 
-This repository provides a framework to train segmentation models to segment document layouts. Currently, the supported training datasets include [DAD](https://github.com/logan-markewich/DAD-Dense-Article-Dataset) and [PubLayNet](https://developer.ibm.com/technologies/artificial-intelligence/data/publaynet/).
+This repository provides a framework to train segmentation models to segment document layouts. Currently, the supported training datasets include [DAD](https://github.com/LivingSkyTechnologies/Dense_Article_Dataset_DAD) and [PubLayNet](https://developer.ibm.com/technologies/artificial-intelligence/data/publaynet/).
 
 [Setup](#Setup)
 
