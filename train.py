@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from datasets.DatasetBuilder import get_dataset
 from models.gated_scnn.gated_shape_cnn.training.loss import loss as gscnn_loss
-from loss import seg_loss, SegmentationAccuracy
+from loss import seg_loss, seg_box_loss, SegmentationAccuracy
 from utils.MetricsUtils import evaluate_segmentation
 from models.ModelBuilder import build_model
 
@@ -45,6 +45,7 @@ def report_results(model_name, test, valid, class_mapping, is_gscnn=False):
     avg_test_class_iou = np.zeros((len(class_mapping),))
     avg_test_class_accuracies = np.zeros((len(class_mapping),))
     avg_test_class_count = np.zeros((len(class_mapping),))
+    status_file = open(model_name.replace('h5', 'txt') if not is_gscnn else model_name + '.txt', 'a+')
     for sample in test:
         for input_image, golden_mask in zip(sample[0], sample[1]):
             one_img_batch = input_image[tf.newaxis, ...]
@@ -76,9 +77,11 @@ def report_results(model_name, test, valid, class_mapping, is_gscnn=False):
             test_count += 1
             if test_count % 200 == 0:
                 print("Acc. step {} on test set".format(test_count))
+                status_file.write("Acc. step {} on test set\n".format(test_count))
 
     f1_avg = f1_avg/float(test_count)
     print("Just test F1 Score was {}".format(f1_avg))
+    status_file.write("Just test F1 Score was {}\n".format(f1_avg))
 
     f1_avg = 0
     valid_count = 0
@@ -116,13 +119,18 @@ def report_results(model_name, test, valid, class_mapping, is_gscnn=False):
             valid_count += 1
             if valid_count % 200 == 0:
                 print("Acc. step {} on val set".format(valid_count))
+                status_file.write("Acc. step {} on val set\n".format(valid_count))
 
     f1_avg = f1_avg/float(valid_count)
     print("Just validation F1 Score was {}".format(f1_avg))
+    status_file.write("Just validation F1 Score was {}\n".format(f1_avg))
 
     print("Class Accuracies:")
     print("|Class Name|Test|Val|")
     print("|----------|----|---|")
+    status_file.write("Class Accuracies:\n")
+    status_file.write("|Class Name|Test|Val|\n")
+    status_file.write("|----------|----|---|\n")
     for i, name in class_mapping.items():
         test_acc_score = avg_test_class_accuracies[i]
         test_class_count = avg_test_class_count[i]
@@ -131,11 +139,18 @@ def report_results(model_name, test, valid, class_mapping, is_gscnn=False):
         print("|%s|%f%%|%f%%|" % (name,
                                   test_acc_score/float(test_class_count)*100.0, 
                                   valid_acc_score/float(valid_class_count)*100.0))
+        status_file.write("|%s|%f%%|%f%%|\n" % (name,
+                                  test_acc_score/float(test_class_count)*100.0,
+                                  valid_acc_score/float(valid_class_count)*100.0))
 
     print("\n")
     print("Class mIOU:")
     print("|Class Name|Test|Val|")
     print("|----------|----|---|")
+    status_file.write("\n\n")
+    status_file.write("Class mIOU:\n")
+    status_file.write("|Class Name|Test|Val|\n")
+    status_file.write("|----------|----|---|\n")
     for i, name in class_mapping.items():
         test_iou_score = avg_test_class_iou[i]
         test_class_count = avg_test_class_count[i]
@@ -144,13 +159,17 @@ def report_results(model_name, test, valid, class_mapping, is_gscnn=False):
         print("|%s|%f%%|%f%%|" % (name,
                                   test_iou_score/float(test_class_count)*100.0,
                                   valid_iou_score/float(valid_class_count)*100.0))
+        status_file.write("|%s|%f%%|%f%%|\n" % (name,
+                                  test_iou_score/float(test_class_count)*100.0,
+                                  valid_iou_score/float(valid_class_count)*100.0))
+    status_file.close()
 
-def train_gscnn(model, train, valid, lr, patience, model_name):
+def train_gscnn(model, train, valid, lr, patience, model_name, box_loss):
     def calc_loss(model, input_image, gt_mask, gt_edges, gt_boxes, training, loss_weights):
         out = model(input_image, training=training)
         prediction, shape_head = out[..., :-1], out[..., -1:]
 
-        loss_val = tf.reduce_sum(gscnn_loss(gt_mask, gt_boxes, prediction, shape_head, gt_edges, loss_weights))
+        loss_val = tf.reduce_sum(gscnn_loss(gt_mask, gt_boxes, prediction, shape_head, gt_edges, loss_weights, box_loss))
         reg_loss = tf.reduce_sum(model.losses)
         return tf.math.add(loss_val, reg_loss)
 
@@ -167,15 +186,18 @@ def train_gscnn(model, train, valid, lr, patience, model_name):
     num_bad_iters = 0
     num_epochs = 100
     lr_decreased = False
+    status_file = open(model_name + '.txt', 'a+')
     for epoch in range(num_epochs):
         if num_bad_iters >= patience and lr_decreased:
             print("Val Loss is not improving, exiting...")
+            status_file.write("Val Loss is not improving, exiting...\n")
             break
         elif num_bad_iters >= patience:
             print("Lowering lr, restarting from best model")
+            status_file.write("Lowering lr, restarting from best model\n")
             lr_decreased = True
             num_bad_iters = 0
-            optimizer = tf.keras.optimizers.Adam(learning_rate=1e-7)
+            optimizer = tf.keras.optimizers.Adam(learning_rate=lr/10.0)
             model = tf.keras.models.load_model(model_name)
 
         epoch_loss_avg = tf.keras.metrics.Mean()
@@ -204,6 +226,7 @@ def train_gscnn(model, train, valid, lr, patience, model_name):
             step += 1
             if step % 100 == 0:
                 print("Step {}: Loss: {:.3f}, Accuracy: {:.3%}".format(step, epoch_loss_avg.result(), epoch_accuracy.result()))
+                status_file.write("Step {}: Loss: {:.3f}, Accuracy: {:.3%}\n".format(step, epoch_loss_avg.result(), epoch_accuracy.result()))
         
         for input_image, gt_mask, gt_edges, gt_boxes in valid:
             tf.keras.backend.clear_session()
@@ -219,15 +242,17 @@ def train_gscnn(model, train, valid, lr, patience, model_name):
 
             epoch_val_loss_avg.update_state(loss_value)
             epoch_val_accuracy.update_state(flat_label_masked, flat_pred_masked)
-        
+
         val_loss = epoch_val_loss_avg.result()
         if val_loss < best_val_loss:
             print("Val Loss decreased from {:.4f} to {:.4f}".format(best_val_loss, val_loss))
+            status_file.write("Val Loss decreased from {:.4f} to {:.4f}\n".format(best_val_loss, val_loss))
             best_val_loss = val_loss
             num_bad_iters = 0
             model.save(model_name)
         else:
             print("Val Loss did not decrease from {:.4f}".format(best_val_loss))
+            status_file.write("Val Loss did not decrease from {:.4f}\n".format(best_val_loss))
             num_bad_iters += 1
     
         print("Epoch: {:02d} Loss: {:.3f}, Accuracy: {:.3%}, Val Loss: {:.3f}, Val Accuracy: {:.3%}\n".format(epoch, 
@@ -235,32 +260,45 @@ def train_gscnn(model, train, valid, lr, patience, model_name):
                                                                                                         epoch_accuracy.result(),
                                                                                                         epoch_val_loss_avg.result(),
                                                                                                         epoch_val_accuracy.result()))       
+        status_file.write("Epoch: {:02d} Loss: {:.3f}, Accuracy: {:.3%}, Val Loss: {:.3f}, Val Accuracy: {:.3%}\n\n".format(epoch,
+                                                                                                       epoch_loss_avg.result(),
+                                                                                                        epoch_accuracy.result(),
+                                                                                                        epoch_val_loss_avg.result(),
+                                                                                                        epoch_val_accuracy.result()))
+    status_file.close()
 
-def train_generic(model, train, valid, lr, patience, model_name):
+def train_generic(model, train, valid, lr, patience, model_name, box_loss):
     def calc_loss(model, input_image, gt_mask, gt_boxes, training):
         predicted_mask = model(input_image, training=training)
-        return seg_loss(gt_mask, predicted_mask, gt_boxes)
+        if box_loss:
+            return seg_box_loss(gt_mask, predicted_mask, gt_boxes), predicted_mask
+        else:
+            return seg_loss(gt_mask, predicted_mask, gt_boxes), predicted_mask
 
     def grad(model, input_image, gt_mask, gt_boxes):
         with tf.GradientTape() as tape:
-            loss_value = calc_loss(model, input_image, gt_mask, gt_boxes, True)
+            loss_value, _ = calc_loss(model, input_image, gt_mask, gt_boxes, True)
         return loss_value, tape.gradient(loss_value, model.trainable_variables)
-
+    
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
     
-    best_val_loss = 1000000.0
+    best_val_loss = 100000.0
     num_bad_iters = 0
     num_epochs = 100
     lr_decreased = False
+    status_file = open(model_name.replace('h5', 'txt'), 'a+')
     for epoch in range(num_epochs):
         if num_bad_iters >= patience and lr_decreased:
             print("Val Loss is not improving, exiting...")
+            status_file.write("Val Loss is not improving, exiting...\n")
             break
         elif num_bad_iters >= patience:
             print("Lowering lr, restarting from best model")
+            status_file.write("Lowering lr, restarting from best model\n")
             lr_decreased = True
             num_bad_iters = 0
-            optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001)
+            optimizer = tf.keras.optimizers.Adam(learning_rate=lr/10.0)
+            print('Loading model')
             model = tf.keras.models.load_model(model_name, compile=False)
 
         epoch_loss_avg = tf.keras.metrics.Mean()
@@ -280,27 +318,36 @@ def train_generic(model, train, valid, lr, patience, model_name):
             step += 1
             if step % 100 == 0:
                 print("Step {}: Loss: {:.3f}, Accuracy: {:.3%}".format(step, epoch_loss_avg.result(), epoch_accuracy.result()))
+                status_file.write("Step {}: Loss: {:.3f}, Accuracy: {:.3%}\n".format(step, epoch_loss_avg.result(), epoch_accuracy.result()))
     
         for input_image, gt_mask, gt_boxes in valid:
-            loss_value = calc_loss(model, input_image, gt_mask, gt_boxes, training=False)
+            loss_value, pred = calc_loss(model, input_image, gt_mask, gt_boxes, training=False)
             epoch_val_loss_avg.update_state(loss_value)
-            epoch_val_accuracy.update_state(gt_mask, model(input_image, training=False))
+            epoch_val_accuracy.update_state(gt_mask, pred)
 
         val_loss = epoch_val_loss_avg.result()
         if val_loss < best_val_loss:
             print("Val Loss decreased from {:.4f} to {:.4f}".format(best_val_loss, val_loss))
+            status_file.write("Val Loss decreased from {:.4f} to {:.4f}\n".format(best_val_loss, val_loss))
             best_val_loss = val_loss
             num_bad_iters = 0
             model.save(model_name)
         else:
             print("Val Loss did not decrease from {:.4f}".format(best_val_loss))
+            status_file.write("Val Loss did not decrease from {:.4f}\n".format(best_val_loss))
             num_bad_iters += 1
     
         print("Epoch: {:02d} Loss: {:.3f}, Accuracy: {:.3%}, Val Loss: {:.3f}, Val Accuracy: {:.3%}\n".format(epoch, 
                                                                                                         epoch_loss_avg.result(),
                                                                                                         epoch_accuracy.result(),
                                                                                                         epoch_val_loss_avg.result(),
-                                                                                                        epoch_val_accuracy.result()))       
+                                                                                                        epoch_val_accuracy.result()))
+
+        status_file.write("Epoch: {:02d} Loss: {:.3f}, Accuracy: {:.3%}, Val Loss: {:.3f}, Val Accuracy: {:.3%}\n\n".format(epoch,
+                                                                                                        epoch_loss_avg.result(),
+                                                                                                        epoch_accuracy.result(),
+                                                                                                        epoch_val_loss_avg.result(),
+                                                                                                        epoch_val_accuracy.result()))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a segmentation model.')
@@ -331,12 +378,13 @@ if __name__ == "__main__":
 
     # Train the model
     print("Starting train loop...\n")
-    model_name = args.model + "_{}_best.h5".format(args.dataset)
+    box_str = 'box' if args.box_loss else 'no_box'
+    model_name = args.model + "_{}_{}_best.h5".format(args.dataset, box_str)
     if args.model == "gated_scnn":
-        model_name = args.model + "_{}_best".format(args.dataset)
-        train_gscnn(model, train, valid, args.base_lr, args.patience, model_name)
+        model_name = args.model + "_{}_{}_best".format(args.dataset, box_str)
+        train_gscnn(model, train, valid, args.base_lr, args.patience, model_name, args.box_loss)
     else:
-        train_generic(model, train, valid, args.base_lr, args.patience, model_name)
+        train_generic(model, train, valid, args.base_lr, args.patience, model_name, args.box_loss)
     
     # Report stats from the test set
     print("Gathering accuracy statistics...\n")
